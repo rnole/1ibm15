@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>LUS Control Panel</title>
+<style>
+  :root { --fg:#0f172a; --muted:#64748b; --border:#e2e8f0; --bg:#f8fafc;
+          --accent:#2563eb; --accent-2:#16a34a; --danger:#dc2626;}
+  *{box-sizing:border-box}
+  body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg);margin:0}
+  .wrap{max-width:1100px;margin:32px auto;padding:0 16px}
+  .badge{font-size:.9rem;color:var(--muted)}
+  .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 2px 10px rgba(2,6,23,.04);margin:14px 0}
+  h1{font-size:1.85rem;margin:0 0 6px 0}
+  h2{font-size:1.25rem;margin:0 0 12px 0}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .help{font-size:.9rem;color:var(--muted);margin-top:6px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92rem}
+  input[type=file],input[type=number],input[type=text]{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff}
+  input[type=number]{width:110px}
+  input[type=text]{width:200px}
+  button{border:0;background:var(--accent);color:#fff;padding:10px 14px;border-radius:12px;cursor:pointer;transition:.15s}
+  button:hover{filter:brightness(.95)}
+  .btn-success{background:var(--accent-2)}
+  .btn-ghost{background:transparent;color:var(--accent);border:1px solid var(--border)}
+  .status{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:#f1f5f9}
+  .status.ok{border-color:#86efac;background:#ecfdf5;color:#166534}
+  .status.err{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+  details summary{cursor:pointer;color:var(--muted);margin-top:8px}
+  .out{white-space:pre-wrap;background:#fff;border:1px dashed var(--border);border-radius:12px;padding:12px;font-size:.9rem;margin-top:10px}
+  a.link{color:var(--accent);text-decoration:none}
+  a.link:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🩺 LUS Control Panel</h1>
+    <div class="badge mono">Orthanc: %%ORTHANC%% &nbsp; | &nbsp; OHIF: __OHIF__</div>
+
+    <div class="card">
+      <h2>1) Probar conexión con Orthanc</h2>
+      <div class="row">
+        <button class="btn-success" onclick="ping()">Probar conexión</button>
+        <a class="link" id="ohif_link" href="__OHIF__" target="_blank" rel="noopener">Abrir OHIF</a>
+        <button class="btn-ghost" onclick="openOHIF()">Abrir OHIF (botón)</button>
+      </div>
+      <div id="ping_status" class="status" style="margin-top:10px;">Sin probar</div>
+      <details id="ping_details" style="margin-top:8px;">
+        <summary>Ver detalle técnico</summary>
+        <div id="ping_out" class="out mono"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>2) Grabar con OBS</h2>
+      <div class="row">
+      <button onclick="startRecord()">▶️ Start recording</button>
+      <button onclick="stopRecord()"> ⏹ Stop & get file</button>
+      <!-- <button onclick="/record/start">▶️ Start recording</button> -->
+      <!-- <button onclick="/record/stop"> ⏹ Stop & get file</button> -->
+      <span id="obs_status" class="mono"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3) Subir MP4 → Convertir → Enviar</h2>
+      <div class="row">
+        <input id="mp4" type="file" accept="video/mp4"/>
+        <input id="fps" type="number" step="0.1" value="6.0" title="FPS objetivo"/>
+        <input id="pid" type="text" value="0001" placeholder="PatientID"/>
+        <input id="pname" type="text" value="Anon_001" placeholder="PatientName"/>
+        <input id="bpart" type="text" value="LUNG" placeholder="BodyPart"/>
+        <button onclick="uploadConvertSend()">Subir + Convertir + Enviar</button>
+      </div>
+      <div class="help">
+        <b>FPS objetivo</b>: cuántas imágenes por segundo tendrá el DICOM (p. ej. 6).&nbsp;
+        <b>PatientID</b> y <b>PatientName</b>: se usarán en los metadatos (puedes usar valores anónimos).&nbsp;
+        <b>BodyPart</b>: texto libre (ej. <i>LUNG</i>).
+      </div>
+      <div id="wflow_status" class="status" style="margin-top:10px;">Esperando archivo…</div>
+      <details id="wflow_details" style="margin-top:8px;">
+        <summary>Ver detalle técnico</summary>
+        <div id="wflow_out" class="out mono"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>4) Visualización</h2>
+      <div class="row">
+        <a class="link" href="http://3.222.98.144:8042/ohif" target="_blank" rel="noopener">Abrir OHIF (http://3.222.98.144:8042/ohif/)</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+const OHIF="__OHIF__";
+
+function pretty(obj){ try{ return JSON.stringify(obj, null, 2); }catch(e){ return String(obj); } }
+
+async function startRecord(){
+  const status = document.getElementById('obs_status');
+  status.textContent = "Starting…";
+  try{
+    const r = await fetch('/record/start', { method:'GET' });
+    const j = await r.json();
+    status.textContent = (j.ok ? "Recording started ✅" : "Failed to start ❌");
+  }catch(e){
+    status.textContent = "Error starting recording ❌";
+  }
+}
+
+async function stopRecord(){
+  const status = document.getElementById('obs_status');
+  status.textContent = "Stopping…";
+  try{
+    const r = await fetch('/record/stop', { method:'GET' });
+    const j = await r.json();
+    if(j.ok){
+      status.textContent = `Stopped. File: ${j.file || "(unknown)"}`;
+    }else{
+      status.textContent = "Failed to stop ❌";
+    }
+  }catch(e){
+    status.textContent = "Error stopping recording ❌";
+  }
+}
+
+
+function setStatus(el, ok, text){
+  el.className = "status " + (ok ? "ok" : "err");
+  el.textContent = text;
+}
+
+function openOHIF(){
+  try {
+    window.open(OHIF, "_blank","noopener");
+  } catch(e) {
+    alert("No se pudo abrir en una nueva pestaña. Copia y pega esta URL: " + OHIF);
+  }
+}
+
+async function ping(){
+  const status = document.getElementById('ping_status');
+  const out = document.getElementById('ping_out');
+  const det = document.getElementById('ping_details');
+  try{
+    const r = await fetch('/pacs/ping');
+    const j = await r.json();
+    setStatus(status, true, "Conectado ✅");
+    out.textContent = pretty(j);
+    det.open = false; // lo dejamos cerrado por defecto
+  }catch(e){
+    setStatus(status, false, "Error al conectar ❌");
+    out.textContent = String(e);
+    det.open = true;
+  }
+}
+
+async function uploadConvertSend(){
+  const status = document.getElementById('wflow_status');
+  const out = document.getElementById('wflow_out');
+  const det = document.getElementById('wflow_details');
+
+  const file = document.getElementById('mp4').files[0];
+  if(!file){ setStatus(status, false, "Selecciona un archivo MP4"); return; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('target_fps', parseFloat(document.getElementById('fps').value || "6.0"));
+  fd.append('patient_id',  document.getElementById('pid').value || "0001");
+  fd.append('patient_name',document.getElementById('pname').value || "Anon_001");
+  fd.append('body_part',   document.getElementById('bpart').value || "LUNG");
+
+  setStatus(status, true, "Procesando… (subiendo, convirtiendo, enviando)");
+  out.textContent = "";
+  try{
+    const r = await fetch('/workflow/upload-convert-send', { method:'POST', body: fd });
+    const j = await r.json();
+
+    // Mensaje amigable
+    setStatus(status, true, "Convertido y enviado a Orthanc ✅");
+    // Guardamos detalle técnico en el panel oculto
+    out.textContent = pretty(j);
+    det.open = false;
+  }catch(e){
+    setStatus(status, false, "Error en el flujo ❌");
+    out.textContent = String(e);
+    det.open = true;
+  }
+}
+</script>
+</body>
+</html>
