@@ -33,4 +33,4 @@ http://127.0.0.1:5000
 pyinstaller --onefile --add-data "templates;templates" app.py
 ```
 
-3. En el terminal verá varios mensajes. Cuando termine el proceso, encontrará una carpeta llamada dist/ y dentro de ella está el ejecutable. Le da doble click y ejecutará el servidor web en cualquier computadora sin necesidad de Python.
+3. En el terminal verá varios mensajes. Cuando termine el proceso, encontrará una carpeta llamada dist/ y dentro de ella está el ejecutable llamado "app" que le permitirá ejecutar su programa en cualquier computadora que no tenga python. Le da doble click y el servidor web estará disponible localmente.
